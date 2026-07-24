@@ -1,3 +1,4 @@
+mod copy;
 mod db;
 mod integrations;
 mod models;
@@ -10,8 +11,10 @@ use models::{
 };
 use std::{sync::Arc, time::Duration};
 use tauri::{
+    image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    utils::config::Color,
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl,
     WebviewWindowBuilder, WindowEvent,
 };
@@ -43,9 +46,16 @@ struct ScreenshotRegion {
 const CAPTURE_WINDOW_LABEL: &str = "main";
 const SETTINGS_WINDOW_LABEL: &str = "settings";
 const SCREENSHOT_SELECTION_WINDOW_LABEL: &str = "screenshot-selection";
-const CAPTURE_WIDTH: f64 = 680.0;
-const CAPTURE_COMPACT_HEIGHT: f64 = 60.0;
-const CAPTURE_PANEL_HEIGHT: f64 = 720.0;
+const CAPTURE_SHADOW_MARGIN: f64 = 32.0;
+const CAPTURE_CONTENT_WIDTH: f64 = 680.0;
+const CAPTURE_COMPACT_CONTENT_HEIGHT: f64 = 60.0;
+const CAPTURE_PANEL_CONTENT_HEIGHT: f64 = 720.0;
+const CAPTURE_WINDOW_WIDTH: f64 = CAPTURE_CONTENT_WIDTH + CAPTURE_SHADOW_MARGIN * 2.0;
+const CAPTURE_COMPACT_WINDOW_HEIGHT: f64 =
+    CAPTURE_COMPACT_CONTENT_HEIGHT + CAPTURE_SHADOW_MARGIN * 2.0;
+const CAPTURE_PANEL_WINDOW_HEIGHT: f64 = CAPTURE_PANEL_CONTENT_HEIGHT + CAPTURE_SHADOW_MARGIN * 2.0;
+const TRANSPARENT_BACKGROUND: Color = Color(0, 0, 0, 0);
+const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-icon.png");
 
 fn normalize_screenshot_selection(
     selection: &ScreenshotSelection,
@@ -64,7 +74,7 @@ fn normalize_screenshot_selection(
         || selection.width <= 0.0
         || selection.height <= 0.0
     {
-        return Err("截图选区无效，请重新框选".into());
+        return Err(copy::ERR_INVALID_SCREENSHOT_SELECTION.into());
     }
 
     let left = (selection.x * scale_factor)
@@ -82,7 +92,7 @@ fn normalize_screenshot_selection(
     let width = right.saturating_sub(left);
     let height = bottom.saturating_sub(top);
     if width < 8 || height < 8 {
-        return Err("选区太小，请重新框选".into());
+        return Err(copy::ERR_SCREENSHOT_SELECTION_TOO_SMALL.into());
     }
 
     Ok(ScreenshotRegion {
@@ -99,62 +109,89 @@ fn screenshot_region(
 ) -> Result<ScreenshotRegion, String> {
     let main = app
         .get_webview_window(CAPTURE_WINDOW_LABEL)
-        .ok_or_else(|| "找不到快速记录窗口".to_string())?;
+        .ok_or_else(|| copy::ERR_CAPTURE_WINDOW_NOT_FOUND.to_string())?;
     let monitor = main
         .primary_monitor()
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "未找到主显示器".to_string())?;
+        .ok_or_else(|| copy::ERR_PRIMARY_MONITOR_NOT_FOUND.to_string())?;
     let size = monitor.size();
     normalize_screenshot_selection(selection, monitor.scale_factor(), size.width, size.height)
 }
 
 fn capture_size(mode: &str) -> Result<LogicalSize<f64>, String> {
     match mode {
-        "compact" => Ok(LogicalSize::new(CAPTURE_WIDTH, CAPTURE_COMPACT_HEIGHT)),
-        "panel" => Ok(LogicalSize::new(CAPTURE_WIDTH, CAPTURE_PANEL_HEIGHT)),
-        _ => Err("未知的窗口模式".into()),
+        "compact" => Ok(LogicalSize::new(
+            CAPTURE_WINDOW_WIDTH,
+            CAPTURE_COMPACT_WINDOW_HEIGHT,
+        )),
+        "panel" => Ok(LogicalSize::new(
+            CAPTURE_WINDOW_WIDTH,
+            CAPTURE_PANEL_WINDOW_HEIGHT,
+        )),
+        _ => Err(copy::ERR_UNKNOWN_WINDOW_MODE.into()),
     }
+}
+
+fn capture_window_position(
+    work_area_x: i32,
+    work_area_y: i32,
+    work_area_width: u32,
+    work_area_height: u32,
+    scale_factor: f64,
+) -> PhysicalPosition<i32> {
+    let window_width = (CAPTURE_WINDOW_WIDTH * scale_factor).round() as u32;
+    let panel_window_height = (CAPTURE_PANEL_WINDOW_HEIGHT * scale_factor).round() as u32;
+    let shadow_margin = (CAPTURE_SHADOW_MARGIN * scale_factor).round() as u32;
+    let horizontal_offset = work_area_width.saturating_sub(window_width) / 2;
+    let preferred_content_top_offset = (work_area_height as f64 * 0.18).round() as u32;
+    let preferred_window_top_offset = preferred_content_top_offset.saturating_sub(shadow_margin);
+    let max_window_top_offset = work_area_height.saturating_sub(panel_window_height);
+    let vertical_offset = preferred_window_top_offset.min(max_window_top_offset);
+
+    PhysicalPosition::new(
+        work_area_x + horizontal_offset as i32,
+        work_area_y + vertical_offset as i32,
+    )
 }
 
 fn position_capture_window(app: &AppHandle) {
     let Some(window) = app.get_webview_window(CAPTURE_WINDOW_LABEL) else {
         return;
     };
-    let monitor = window
-        .current_monitor()
+    let cursor_monitor = window
+        .cursor_position()
         .ok()
-        .flatten()
+        .and_then(|cursor| window.monitor_from_point(cursor.x, cursor.y).ok().flatten());
+    let monitor = cursor_monitor
+        .or_else(|| window.current_monitor().ok().flatten())
         .or_else(|| window.primary_monitor().ok().flatten());
     let Some(monitor) = monitor else {
         return;
     };
 
     let work_area = monitor.work_area();
-    let scale_factor = monitor.scale_factor();
-    let capture_width = (CAPTURE_WIDTH * scale_factor).round() as u32;
-    let panel_height = (CAPTURE_PANEL_HEIGHT * scale_factor).round() as u32;
-    let horizontal_offset = work_area.size.width.saturating_sub(capture_width) / 2;
-    let preferred_top_offset = (work_area.size.height as f64 * 0.18).round() as u32;
-    let max_top_offset = work_area.size.height.saturating_sub(panel_height);
-    let vertical_offset = preferred_top_offset.min(max_top_offset);
-
-    let position = PhysicalPosition::new(
-        work_area.position.x + horizontal_offset as i32,
-        work_area.position.y + vertical_offset as i32,
+    let position = capture_window_position(
+        work_area.position.x,
+        work_area.position.y,
+        work_area.size.width,
+        work_area.size.height,
+        monitor.scale_factor(),
     );
     let _ = window.set_position(position);
+}
+
+fn make_capture_background_transparent(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(CAPTURE_WINDOW_LABEL) {
+        let _ = window.set_background_color(Some(TRANSPARENT_BACKGROUND));
+    }
 }
 
 fn resize_capture(app: &AppHandle, mode: &str) -> Result<(), String> {
     let window = app
         .get_webview_window(CAPTURE_WINDOW_LABEL)
-        .ok_or_else(|| "找不到快速记录窗口".to_string())?;
-    let position = window.outer_position().map_err(|error| error.to_string())?;
+        .ok_or_else(|| copy::ERR_CAPTURE_WINDOW_NOT_FOUND.to_string())?;
     window
         .set_size(capture_size(mode)?)
-        .map_err(|error| error.to_string())?;
-    window
-        .set_position(position)
         .map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -164,10 +201,12 @@ fn show_capture(app: &AppHandle, mode: &str) -> Result<(), String> {
     // full-screen screenshot window. Keep this cleanup here so tray actions,
     // the global shortcut, and error recovery all behave consistently.
     hide_screenshot_selection(app)?;
+    make_capture_background_transparent(app);
     resize_capture(app, mode)?;
+    position_capture_window(app);
     let window = app
         .get_webview_window(CAPTURE_WINDOW_LABEL)
-        .ok_or_else(|| "找不到快速记录窗口".to_string())?;
+        .ok_or_else(|| copy::ERR_CAPTURE_WINDOW_NOT_FOUND.to_string())?;
     window.show().map_err(|error| error.to_string())?;
     window.unminimize().map_err(|error| error.to_string())?;
     window.set_focus().map_err(|error| error.to_string())?;
@@ -180,7 +219,7 @@ fn show_capture(app: &AppHandle, mode: &str) -> Result<(), String> {
 
 fn try_show_capture(app: &AppHandle, mode: &str) {
     if let Err(error) = show_capture(app, mode) {
-        eprintln!("无法显示快速记录窗口：{}", error);
+        eprintln!("{}", copy::log_show_capture_failed(&error));
     }
 }
 
@@ -199,7 +238,7 @@ fn open_settings(app: &AppHandle) {
             SETTINGS_WINDOW_LABEL,
             WebviewUrl::App("index.html?window=settings".into()),
         )
-        .title("Cadence 设置")
+        .title(copy::SETTINGS_WINDOW_TITLE)
         .inner_size(900.0, 720.0)
         .min_inner_size(720.0, 560.0)
         .build()
@@ -214,11 +253,11 @@ fn open_screenshot_selection(app: &AppHandle) -> Result<(), String> {
 
     let main = app
         .get_webview_window(CAPTURE_WINDOW_LABEL)
-        .ok_or_else(|| "找不到快速记录窗口".to_string())?;
+        .ok_or_else(|| copy::ERR_CAPTURE_WINDOW_NOT_FOUND.to_string())?;
     let monitor = main
         .primary_monitor()
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "未找到主显示器".to_string())?;
+        .ok_or_else(|| copy::ERR_PRIMARY_MONITOR_NOT_FOUND.to_string())?;
     let scale_factor = monitor.scale_factor();
     let position = monitor.position();
     let size = monitor.size();
@@ -228,7 +267,7 @@ fn open_screenshot_selection(app: &AppHandle) -> Result<(), String> {
         SCREENSHOT_SELECTION_WINDOW_LABEL,
         WebviewUrl::App("index.html?window=screenshot".into()),
     )
-    .title("Cadence 截图识别")
+    .title(copy::SCREENSHOT_WINDOW_TITLE)
     .position(
         position.x as f64 / scale_factor,
         position.y as f64 / scale_factor,
@@ -252,9 +291,9 @@ fn open_screenshot_selection(app: &AppHandle) -> Result<(), String> {
             .map_err(|cleanup_error| cleanup_error.to_string());
         return match cleanup {
             Ok(()) => Err(error.to_string()),
-            Err(cleanup_error) => Err(format!(
-                "截图窗口无法获得焦点：{}；清理截图窗口失败：{}",
-                error, cleanup_error
+            Err(cleanup_error) => Err(copy::screenshot_focus_cleanup_failed(
+                &error.to_string(),
+                &cleanup_error,
             )),
         };
     }
@@ -265,13 +304,10 @@ fn destroy_screenshot_selection(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(SCREENSHOT_SELECTION_WINDOW_LABEL) {
         if let Err(destroy_error) = window.destroy() {
             return match window.hide() {
-                Ok(()) => Err(format!(
-                    "销毁截图窗口失败：{}；已隐藏截图窗口，暂不能重新创建",
-                    destroy_error
-                )),
-                Err(hide_error) => Err(format!(
-                    "销毁截图窗口失败：{}；隐藏截图窗口也失败：{}",
-                    destroy_error, hide_error
+                Ok(()) => Err(copy::screenshot_destroy_hidden(&destroy_error.to_string())),
+                Err(hide_error) => Err(copy::screenshot_destroy_hide_failed(
+                    &destroy_error.to_string(),
+                    &hide_error.to_string(),
                 )),
             };
         }
@@ -283,9 +319,9 @@ fn hide_screenshot_selection(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(SCREENSHOT_SELECTION_WINDOW_LABEL) {
         if let Err(hide_error) = window.hide() {
             window.destroy().map_err(|destroy_error| {
-                format!(
-                    "隐藏截图窗口失败：{}；销毁截图窗口也失败：{}",
-                    hide_error, destroy_error
+                copy::screenshot_hide_destroy_failed(
+                    &hide_error.to_string(),
+                    &destroy_error.to_string(),
                 )
             })?;
         }
@@ -312,27 +348,22 @@ fn recognition_summary(drafts: &[TaskDraft]) -> String {
                         .format("%m/%d %H:%M")
                         .to_string()
                 })
-                .unwrap_or_else(|| "未设置日期".into());
+                .unwrap_or_else(|| copy::RECOGNITION_NO_DUE_DATE.into());
             let priority = match draft.priority.as_str() {
-                "high" => "高优先级",
-                "low" => "低优先级",
-                _ => "普通优先级",
+                "high" => copy::PRIORITY_HIGH,
+                "low" => copy::PRIORITY_LOW,
+                _ => copy::PRIORITY_NORMAL,
             };
             format!("{}（{}，{}）", draft.title, due, priority)
         })
         .collect::<Vec<_>>()
         .join("；");
     let remainder = if drafts.len() > 3 {
-        "；其余任务已添加"
+        copy::RECOGNITION_REMAINDER
     } else {
         ""
     };
-    format!(
-        "已识别并添加 {} 项任务：{}{}",
-        drafts.len(),
-        details,
-        remainder
-    )
+    copy::recognition_summary(drafts.len(), &details, remainder)
 }
 
 fn save_recognized_tasks(
@@ -342,7 +373,7 @@ fn save_recognized_tasks(
     source_type: String,
 ) -> Result<String, String> {
     if drafts.is_empty() {
-        return Err("没有识别到可创建的任务".into());
+        return Err(copy::ERR_NO_RECOGNIZED_TASKS.into());
     }
     for draft in &drafts {
         db.create_task(draft.clone(), source_type.clone())?;
@@ -352,7 +383,7 @@ fn save_recognized_tasks(
     let _ = app
         .notification()
         .builder()
-        .title("Cadence 已识别任务")
+        .title(copy::RECOGNIZED_TASKS_NOTIFICATION_TITLE)
         .body(&summary)
         .show();
     let _ = app.emit_to(CAPTURE_WINDOW_LABEL, "recognition:created", &summary);
@@ -364,27 +395,48 @@ fn report_recognition_error(app: &AppHandle, error: String) {
     let _ = app
         .notification()
         .builder()
-        .title("Cadence 识别失败")
+        .title(copy::RECOGNITION_FAILED_NOTIFICATION_TITLE)
         .body(&message)
         .show();
     let _ = app.emit_to(CAPTURE_WINDOW_LABEL, "recognition:error", &message);
 }
 
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
-    let quick_capture = MenuItem::with_id(app, "quick-capture", "快速记录", true, None::<&str>)?;
-    let task_panel = MenuItem::with_id(app, "open-task-panel", "打开任务清单", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "open-settings", "设置", true, None::<&str>)?;
+    let quick_capture = MenuItem::with_id(
+        app,
+        "quick-capture",
+        copy::TRAY_QUICK_CAPTURE,
+        true,
+        None::<&str>,
+    )?;
+    let task_panel = MenuItem::with_id(
+        app,
+        "open-task-panel",
+        copy::TRAY_OPEN_TASK_PANEL,
+        true,
+        None::<&str>,
+    )?;
+    let settings = MenuItem::with_id(
+        app,
+        "open-settings",
+        copy::TRAY_SETTINGS,
+        true,
+        None::<&str>,
+    )?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "退出 Cadence", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", copy::TRAY_QUIT, true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[&quick_capture, &task_panel, &settings, &separator, &quit],
     )?;
+    let tray_icon = Image::from_bytes(TRAY_ICON_BYTES)?;
 
     let tray = TrayIconBuilder::with_id("cadence-tray")
         .menu(&menu)
+        .icon(tray_icon)
+        .icon_as_template(false)
         .show_menu_on_left_click(false)
-        .tooltip("Cadence")
+        .tooltip(copy::APP_NAME)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quick-capture" => {
                 try_show_capture(app, "compact");
@@ -406,11 +458,6 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                 try_show_capture(tray.app_handle(), "compact");
             }
         });
-    let tray = if let Some(icon) = app.default_window_icon() {
-        tray.icon(icon.clone())
-    } else {
-        tray
-    };
     let _tray = tray.build(app)?;
     Ok(())
 }
@@ -484,7 +531,9 @@ fn task_delete(state: State<'_, AppState>, id: String) -> Result<Option<Task>, S
 
 #[tauri::command]
 fn capture_set_mode(app: AppHandle, mode: String) -> Result<(), String> {
-    resize_capture(&app, &mode)
+    resize_capture(&app, &mode)?;
+    position_capture_window(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -504,10 +553,7 @@ fn screenshot_selection_start(app: AppHandle) -> Result<(), String> {
     if let Err(error) = open_screenshot_selection(&app) {
         return match show_capture(&app, "compact") {
             Ok(()) => Err(error),
-            Err(recovery_error) => Err(format!(
-                "{}；恢复快速记录窗口失败：{}",
-                error, recovery_error
-            )),
+            Err(recovery_error) => Err(copy::restore_capture_failed(&error, &recovery_error)),
         };
     }
     Ok(())
@@ -524,20 +570,14 @@ fn screenshot_selection_submit(
         Err(error) => {
             return match dismiss_screenshot_selection(&app) {
                 Ok(()) => Err(error),
-                Err(recovery_error) => Err(format!(
-                    "{}；恢复快速记录窗口失败：{}",
-                    error, recovery_error
-                )),
+                Err(recovery_error) => Err(copy::restore_capture_failed(&error, &recovery_error)),
             };
         }
     };
     if let Err(error) = hide_screenshot_selection(&app) {
         return match show_capture(&app, "compact") {
             Ok(()) => Err(error),
-            Err(recovery_error) => Err(format!(
-                "{}；恢复快速记录窗口失败：{}",
-                error, recovery_error
-            )),
+            Err(recovery_error) => Err(copy::restore_capture_failed(&error, &recovery_error)),
         };
     }
     let db = state.db.clone();
@@ -568,7 +608,7 @@ fn screenshot_selection_submit(
             Err(error) => Err(error),
         };
         if let Some(error) = restore_error {
-            report_recognition_error(&app, format!("无法恢复快速记录窗口：{}", error));
+            report_recognition_error(&app, copy::capture_restore_failed(&error));
         }
         if let Err(error) = result {
             report_recognition_error(&app, error);
@@ -753,7 +793,7 @@ fn spawn_reminder_worker(app: tauri::AppHandle, db: Arc<Database>) {
                     if app
                         .notification()
                         .builder()
-                        .title("Cadence · 即将到期")
+                        .title(copy::DUE_SOON_NOTIFICATION_TITLE)
                         .body(&title)
                         .show()
                         .is_ok()
@@ -834,6 +874,38 @@ mod tests {
         };
         assert!(normalize_screenshot_selection(&selection, 1.0, 1920, 1080).is_err());
     }
+
+    #[test]
+    fn centers_capture_window_horizontally_in_work_area() {
+        assert_eq!(
+            capture_window_position(0, 0, 1920, 1080, 1.0),
+            PhysicalPosition::new(588, 162)
+        );
+    }
+
+    #[test]
+    fn uses_scale_factor_for_physical_capture_width() {
+        assert_eq!(
+            capture_window_position(0, 0, 2880, 1800, 2.0),
+            PhysicalPosition::new(696, 232)
+        );
+    }
+
+    #[test]
+    fn keeps_panel_within_short_work_area() {
+        assert_eq!(
+            capture_window_position(0, 0, 1440, 800, 1.0),
+            PhysicalPosition::new(348, 16)
+        );
+    }
+
+    #[test]
+    fn supports_negative_monitor_origins() {
+        assert_eq!(
+            capture_window_position(-1920, -100, 1920, 1000, 1.0),
+            PhysicalPosition::new(-1332, 48)
+        );
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -871,6 +943,7 @@ pub fn run() {
                 .register("CommandOrControl+Shift+Space");
             let _ = app.autolaunch().enable();
             setup_tray(app)?;
+            make_capture_background_transparent(&app.handle());
             position_capture_window(&app.handle());
             spawn_reminder_worker(app.handle().clone(), db);
             Ok(())
@@ -891,7 +964,7 @@ pub fn run() {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     if let Err(error) = dismiss_screenshot_selection(&window.app_handle()) {
-                        eprintln!("无法关闭截图窗口：{}", error);
+                        eprintln!("{}", copy::log_close_screenshot_failed(&error));
                     }
                 }
             }
@@ -924,5 +997,5 @@ pub fn run() {
             lark_sync_now
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Cadence");
+        .expect(copy::ERR_RUNNING_APP);
 }

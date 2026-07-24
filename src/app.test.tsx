@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/app";
 import * as api from "@/lib/api";
+import { APP_COPY } from "@/lib/copy";
 import { defaultSettings, type Task } from "@/lib/types";
 
 vi.mock("@/lib/api", () => ({
@@ -74,20 +75,20 @@ describe("expanded task panel", () => {
     cleanup();
   });
 
-  it("opens on the future tab, folds later tasks, and unfolds them for search", async () => {
+  it("opens without panel heading or search, and keeps later tasks manually expandable", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "展开任务面板" }));
+    fireEvent.click(screen.getByRole("button", { name: APP_COPY.capture.actions.expandPanel }));
 
-    expect(await screen.findByRole("heading", { name: "未来安排" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: APP_COPY.capture.panel.label })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "未来安排" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "搜索任务" })).not.toBeInTheDocument();
     await waitFor(() => expect(api.listTasks).toHaveBeenLastCalledWith("future"));
-    const laterToggle = await screen.findByRole("button", { name: /以后/ });
+    const laterToggle = await screen.findByRole("button", { name: new RegExp(APP_COPY.capture.panel.later) });
     expect(laterToggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("十天后的任务")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索任务" }), {
-      target: { value: "十天后" },
-    });
+    fireEvent.click(laterToggle);
 
     expect(await screen.findByText("十天后的任务")).toBeInTheDocument();
     expect(laterToggle).toHaveAttribute("aria-expanded", "true");
@@ -96,13 +97,13 @@ describe("expanded task panel", () => {
   it("hides the capture window when Escape is pressed", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "展开任务面板" }));
-    expect(await screen.findByRole("heading", { name: "未来安排" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: APP_COPY.capture.actions.expandPanel }));
+    expect(await screen.findByRole("region", { name: APP_COPY.capture.panel.label })).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "Escape" });
 
     await waitFor(() => expect(api.hideCaptureWindow).toHaveBeenCalledTimes(1));
-    expect(screen.queryByRole("region", { name: "任务面板" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: APP_COPY.capture.panel.label })).not.toBeInTheDocument();
   });
 
   it("loads clipboard content into the placeholder and waits for explicit recognition", async () => {
@@ -111,13 +112,13 @@ describe("expanded task panel", () => {
     vi.mocked(api.scheduleTextRecognition).mockResolvedValue();
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: "读取剪贴板内容" }));
+    fireEvent.click(screen.getByRole("button", { name: APP_COPY.capture.actions.readClipboard }));
 
-    const input = screen.getByRole("textbox", { name: "快速添加任务" });
+    const input = screen.getByRole("textbox", { name: APP_COPY.capture.actions.quickAdd });
     await waitFor(() => expect(input).toHaveAttribute("placeholder", expect.stringContaining("剪贴板")));
     expect(api.scheduleTextRecognition).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "确认识别剪贴板内容" }));
+    fireEvent.click(screen.getByRole("button", { name: APP_COPY.capture.actions.confirmClipboardRecognition }));
 
     await waitFor(() => expect(api.scheduleTextRecognition).toHaveBeenCalledWith(content, "clipboard_text"));
     expect(api.hideCaptureWindow).toHaveBeenCalled();
@@ -127,7 +128,7 @@ describe("expanded task panel", () => {
     vi.mocked(api.scheduleManualRecognition).mockResolvedValue();
     render(<App />);
 
-    const input = screen.getByRole("textbox", { name: "快速添加任务" });
+    const input = screen.getByRole("textbox", { name: APP_COPY.capture.actions.quickAdd });
     fireEvent.change(input, { target: { value: "明天下午交方案" } });
     fireEvent.submit(input.closest("form")!);
 

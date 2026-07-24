@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_AI_MODEL: &str = "mimo-v2.5";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
@@ -69,8 +67,8 @@ impl Default for AppSettings {
             weekly_enabled: true,
             theme: "system".into(),
             ai_base_url: String::new(),
-            ai_text_model: DEFAULT_AI_MODEL.into(),
-            ai_vision_model: DEFAULT_AI_MODEL.into(),
+            ai_text_model: String::new(),
+            ai_vision_model: String::new(),
             lark_app_id: String::new(),
             lark_base_url: String::new(),
             lark_document_url: String::new(),
@@ -79,13 +77,7 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
-    pub fn normalized(mut self) -> Self {
-        if self.ai_text_model.trim().is_empty() {
-            self.ai_text_model = DEFAULT_AI_MODEL.into();
-        }
-        if self.ai_vision_model.trim().is_empty() {
-            self.ai_vision_model = DEFAULT_AI_MODEL.into();
-        }
+    pub fn normalized(self) -> Self {
         self
     }
 }

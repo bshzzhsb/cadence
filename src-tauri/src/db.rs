@@ -288,7 +288,7 @@ fn task_matches_view(task: &Task, view: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{task_matches_view, Database};
-    use crate::models::{AppSettings, Task, DEFAULT_AI_MODEL};
+    use crate::models::{AppSettings, Task};
 
     fn task(status: &str) -> Task {
         Task {
@@ -334,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_legacy_empty_model_names() {
+    fn preserves_empty_model_names() {
         let db = Database::open(":memory:".into()).unwrap();
         let mut settings = AppSettings::default();
         settings.ai_text_model.clear();
@@ -342,8 +342,8 @@ mod tests {
         db.save_settings(&settings).unwrap();
 
         let loaded = db.settings().unwrap();
-        assert_eq!(loaded.ai_text_model, DEFAULT_AI_MODEL);
-        assert_eq!(loaded.ai_vision_model, DEFAULT_AI_MODEL);
+        assert!(loaded.ai_text_model.is_empty());
+        assert!(loaded.ai_vision_model.is_empty());
     }
 }
 

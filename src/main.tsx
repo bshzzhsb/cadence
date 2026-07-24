@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./app";
 import { SettingsWindow } from "./biz-components/settings-window";
 import { ScreenshotSelectionWindow } from "./biz-components/screenshot-selection-window";
+import { APP_COPY } from "@/lib/copy";
 import { isTauriRuntime } from "@/lib/utils";
 import "./app.css";
 
@@ -12,9 +13,9 @@ function DesktopOnlyNotice() {
   return (
     <main className="desktop-only-notice">
       <div className="desktop-only-card">
-        <p className="eyebrow">Cadence</p>
-        <h1>请使用 Cadence 桌面版</h1>
-        <p>Cadence 的任务、设置和模型配置需要在 Tauri 桌面应用中运行。</p>
+        <p className="eyebrow">{APP_COPY.app.name}</p>
+        <h1>{APP_COPY.desktopOnly.title}</h1>
+        <p>{APP_COPY.desktopOnly.body}</p>
       </div>
     </main>
   );

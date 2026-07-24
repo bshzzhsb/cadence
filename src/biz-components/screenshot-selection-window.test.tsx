@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScreenshotSelectionWindow } from "@/biz-components/screenshot-selection-window";
 import * as api from "@/lib/api";
+import { APP_COPY } from "@/lib/copy";
 
 vi.mock("@/lib/api", () => ({
   cancelScreenshotSelection: vi.fn(),
@@ -37,7 +38,7 @@ describe("ScreenshotSelectionWindow", () => {
     fireEvent(stage, new MouseEvent("pointermove", { bubbles: true, clientX: 340, clientY: 260 }));
     fireEvent(stage, new MouseEvent("pointerup", { bubbles: true, clientX: 340, clientY: 260 }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "识别选区" }));
+    fireEvent.click(await screen.findByRole("button", { name: APP_COPY.screenshotSelection.actions.recognizeSelection }));
 
     await waitFor(() => expect(api.submitScreenshotSelection).toHaveBeenCalledWith({
       x: 40,
@@ -77,9 +78,9 @@ describe("ScreenshotSelectionWindow", () => {
     fireEvent(stage, new MouseEvent("pointerdown", { bubbles: true, clientX: 40, clientY: 60 }));
     fireEvent(stage, new MouseEvent("pointermove", { bubbles: true, clientX: 340, clientY: 260 }));
     fireEvent(stage, new MouseEvent("pointerup", { bubbles: true, clientX: 340, clientY: 260 }));
-    fireEvent.click(await screen.findByRole("button", { name: "识别选区" }));
+    fireEvent.click(await screen.findByRole("button", { name: APP_COPY.screenshotSelection.actions.recognizeSelection }));
 
     await waitFor(() => expect(screen.getByText("Error: 截图失败")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "识别选区" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: APP_COPY.screenshotSelection.actions.recognizeSelection })).not.toBeDisabled();
   });
 });

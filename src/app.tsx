@@ -10,7 +10,6 @@ import {
   History,
   LayoutList,
   LoaderCircle,
-  Search,
   Sparkles,
   WandSparkles,
 } from "lucide-react";
@@ -38,6 +37,7 @@ import {
   type ViewId,
   type WeeklyReport,
 } from "@/lib/types";
+import { APP_COPY } from "@/lib/copy";
 import { groupFutureTasks } from "@/lib/task-groups";
 import { applyTheme, cn, isTauriRuntime } from "@/lib/utils";
 import { Button } from "@/components/button";
@@ -45,9 +45,9 @@ import { TaskItem } from "@/biz-components/task-item";
 import cadenceLogo from "@/assets/cadence-logo-ui.png";
 
 const tabs: Array<{ id: ViewId; label: string; icon: typeof CalendarDays }> = [
-  { id: "future", label: "未来", icon: CalendarDays },
-  { id: "history", label: "历史", icon: History },
-  { id: "weekly", label: "周总结", icon: LayoutList },
+  { id: "future", label: APP_COPY.capture.tabs.future, icon: CalendarDays },
+  { id: "history", label: APP_COPY.capture.tabs.history, icon: History },
+  { id: "weekly", label: APP_COPY.capture.tabs.weekly, icon: LayoutList },
 ];
 
 interface ClipboardCandidate {
@@ -62,7 +62,6 @@ export default function App() {
   const [reports, setReports] = useState<WeeklyReport[]>([]);
   const [currentReport, setCurrentReport] = useState<WeeklyReport | null>(null);
   const [input, setInput] = useState("");
-  const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [clipboardCandidate, setClipboardCandidate] = useState<ClipboardCandidate | null>(null);
   const [laterExpanded, setLaterExpanded] = useState(false);
@@ -89,20 +88,17 @@ export default function App() {
 
   const openPanel = useCallback(async () => {
     setTab("future");
-    setSearch("");
     setLaterExpanded(false);
     await setWindowMode("panel");
   }, [setWindowMode]);
 
   const closePanel = useCallback(async () => {
-    setSearch("");
     await setWindowMode("compact");
   }, [setWindowMode]);
 
   const hideWindow = useCallback(async () => {
     setMode("compact");
     setClipboardCandidate(null);
-    setSearch("");
     try {
       await hideCaptureWindow();
     } catch (error) {
@@ -125,7 +121,6 @@ export default function App() {
       setMode(payload);
       if (payload === "panel") {
         setTab("future");
-        setSearch("");
         setLaterExpanded(false);
       }
       if (payload === "compact") {
@@ -149,7 +144,7 @@ export default function App() {
     });
 
     void listen<string>("recognition:error", ({ payload }) => {
-      announce(`识别失败：${payload}`);
+      announce(APP_COPY.capture.toast.recognitionFailed(payload));
     }).then((unlisten) => {
       removeRecognitionErrorListener = unlisten;
     });
@@ -255,10 +250,10 @@ export default function App() {
     setBusy(true);
     try {
       const payload = await readClipboardPayload();
-      if (!payload.content) throw new Error("剪贴板里没有可识别的内容");
+      if (!payload.content) throw new Error(APP_COPY.capture.errors.emptyClipboard);
       setInput("");
       setClipboardCandidate(payload);
-      announce(payload.type === "image" ? "已读取剪贴板图片，点击“识别”发送给模型" : "已读取剪贴板内容，点击“识别”发送给模型");
+      announce(payload.type === "image" ? APP_COPY.capture.toast.clipboardImageReady : APP_COPY.capture.toast.clipboardTextReady);
     } catch (error) {
       announce(String(error));
     } finally {
@@ -277,18 +272,12 @@ export default function App() {
     }
   };
 
-  const visibleTasks = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
-    if (!query) return tasks;
-    return tasks.filter((task) => `${task.title} ${task.notes ?? ""} ${task.tags.join(" ")}`.toLocaleLowerCase().includes(query));
-  }, [search, tasks]);
-  const futureGroups = useMemo(() => groupFutureTasks(visibleTasks), [visibleTasks]);
-  const shouldShowLater = laterExpanded || Boolean(search.trim());
+  const futureGroups = useMemo(() => groupFutureTasks(tasks), [tasks]);
   const capturePlaceholder = clipboardCandidate
     ? clipboardCandidate.type === "image"
-      ? "已读取剪贴板图片，点击“识别”发送给模型"
-      : `剪贴板：${clipboardCandidate.content.replace(/\s+/g, " ").trim().slice(0, 96)}${clipboardCandidate.content.length > 96 ? "…" : ""}`
-    : "写下任务，例如：明天下午 3 点交方案 #工作 !高";
+      ? APP_COPY.capture.placeholder.clipboardImage
+      : APP_COPY.capture.placeholder.clipboardText(clipboardCandidate.content)
+    : APP_COPY.capture.placeholder.default;
 
   return (
     <main className={cn("capture-shell", mode === "panel" && "capture-shell-expanded")}>
@@ -306,22 +295,22 @@ export default function App() {
               }}
               className="capture-input"
               placeholder={capturePlaceholder}
-              aria-label="快速添加任务"
+              aria-label={APP_COPY.capture.actions.quickAdd}
             />
-            <button type="submit" className="sr-only">添加任务</button>
+            <button type="submit" className="sr-only">{APP_COPY.capture.actions.addTask}</button>
           </form>
-          {busy && <LoaderCircle size={16} className="animate-spin text-muted-foreground" aria-label="正在处理" />}
+          {busy && <LoaderCircle size={16} className="animate-spin text-muted-foreground" aria-label={APP_COPY.capture.actions.processing} />}
         </div>
         <div className="capture-actions" data-tauri-drag-region="false">
           {clipboardCandidate && (
-            <Button variant="outline" size="sm" className="clipboard-confirm" onClick={confirmClipboardRecognition} disabled={busy} aria-label="确认识别剪贴板内容" title="确认识别剪贴板内容">
-              <Sparkles size={15} /> 识别
+            <Button variant="outline" size="sm" className="clipboard-confirm" onClick={confirmClipboardRecognition} disabled={busy} aria-label={APP_COPY.capture.actions.confirmClipboardRecognition} title={APP_COPY.capture.actions.confirmClipboardRecognition}>
+              <Sparkles size={15} /> {APP_COPY.capture.actions.recognize}
             </Button>
           )}
-          <Button variant="ghost" size="icon" onClick={captureClipboard} disabled={busy} aria-label="读取剪贴板内容" title="读取剪贴板内容">
+          <Button variant="ghost" size="icon" onClick={captureClipboard} disabled={busy} aria-label={APP_COPY.capture.actions.readClipboard} title={APP_COPY.capture.actions.readClipboard}>
             <ClipboardPaste size={17} />
           </Button>
-          <Button variant="ghost" size="icon" onClick={captureScreen} disabled={busy} aria-label="框选屏幕区域识别" title="框选屏幕区域识别">
+          <Button variant="ghost" size="icon" onClick={captureScreen} disabled={busy} aria-label={APP_COPY.capture.actions.captureScreen} title={APP_COPY.capture.actions.captureScreen}>
             <WandSparkles size={17} />
           </Button>
           <Button
@@ -329,9 +318,9 @@ export default function App() {
             size="icon"
             onClick={() => void (mode === "panel" ? closePanel() : openPanel())}
             disabled={busy}
-            aria-label={mode === "panel" ? "收起任务面板" : "展开任务面板"}
+            aria-label={mode === "panel" ? APP_COPY.capture.actions.collapsePanel : APP_COPY.capture.actions.expandPanel}
             aria-expanded={mode === "panel"}
-            title={mode === "panel" ? "收起任务面板" : "展开任务面板"}
+            title={mode === "panel" ? APP_COPY.capture.actions.collapsePanel : APP_COPY.capture.actions.expandPanel}
           >
             <ChevronDown size={18} className={cn("transition-transform", mode === "panel" && "rotate-180")} />
           </Button>
@@ -339,28 +328,14 @@ export default function App() {
       </header>
 
       {mode === "panel" && (
-        <section className="task-panel" aria-label="任务面板">
-          <div className="task-panel-heading">
-            <div>
-              <p className="eyebrow">Cadence</p>
-              <h1>{tab === "future" ? "未来安排" : tab === "history" ? "任务历史" : "周总结"}</h1>
-            </div>
-            {tab !== "weekly" && (
-              <label className="panel-search">
-                <Search size={15} />
-                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索任务" aria-label="搜索任务" />
-              </label>
-            )}
-          </div>
-
-          <nav className="panel-tabs" aria-label="任务分类">
+        <section className="task-panel" aria-label={APP_COPY.capture.panel.label}>
+          <nav className="panel-tabs" aria-label={APP_COPY.capture.panel.tabsLabel}>
             {tabs.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 className={cn("panel-tab", tab === id && "panel-tab-active")}
                 onClick={() => {
                   setTab(id);
-                  setSearch("");
                   if (id === "future") setLaterExpanded(false);
                 }}
               >
@@ -374,23 +349,23 @@ export default function App() {
             {tab === "future" && (
               <FutureTasks
                 groups={futureGroups}
-                empty={visibleTasks.length === 0}
-                laterExpanded={shouldShowLater}
+                empty={tasks.length === 0}
+                laterExpanded={laterExpanded}
                 onToggleLater={() => setLaterExpanded((value) => !value)}
-                onComplete={(id) => mutate(completeTask, id, "任务已完成")}
-                onReopen={(id) => mutate(reopenTask, id, "任务已重新打开")}
-                onDelete={(id) => mutate(deleteTask, id, "任务已删除")}
+                onComplete={(id) => mutate(completeTask, id, APP_COPY.capture.toast.taskCompleted)}
+                onReopen={(id) => mutate(reopenTask, id, APP_COPY.capture.toast.taskReopened)}
+                onDelete={(id) => mutate(deleteTask, id, APP_COPY.capture.toast.taskDeleted)}
               />
             )}
             {tab === "history" && (
               <TaskCollection
-                title="已完成"
-                tasks={visibleTasks}
-                emptyTitle="还没有完成记录"
-                emptyText="完成的任务会留在这里，方便回顾。"
-                onComplete={(id) => mutate(completeTask, id, "任务已完成")}
-                onReopen={(id) => mutate(reopenTask, id, "任务已重新打开")}
-                onDelete={(id) => mutate(deleteTask, id, "任务已删除")}
+                title={APP_COPY.capture.panel.historyTitle}
+                tasks={tasks}
+                emptyTitle={APP_COPY.capture.panel.historyEmptyTitle}
+                emptyText={APP_COPY.capture.panel.historyEmptyText}
+                onComplete={(id) => mutate(completeTask, id, APP_COPY.capture.toast.taskCompleted)}
+                onReopen={(id) => mutate(reopenTask, id, APP_COPY.capture.toast.taskReopened)}
+                onDelete={(id) => mutate(deleteTask, id, APP_COPY.capture.toast.taskDeleted)}
               />
             )}
             {tab === "weekly" && (
@@ -405,7 +380,7 @@ export default function App() {
                     const report = await generateWeeklyReport(useAi);
                     setCurrentReport(report);
                     setReports((items) => [report, ...items.filter((item) => item.id !== report.id)]);
-                    announce("周总结已生成");
+                    announce(APP_COPY.capture.toast.weeklyGenerated);
                   } catch (error) {
                     announce(String(error));
                   } finally {
@@ -457,13 +432,13 @@ function FutureTasks({ groups, empty, laterExpanded, onToggleLater, onComplete, 
   onToggleLater: () => void;
 }) {
   if (empty) {
-    return <EmptyState title="接下来很清爽" text="用上方输入框记下一件事，回车即可保存。" />;
+    return <EmptyState title={APP_COPY.capture.panel.futureEmptyTitle} text={APP_COPY.capture.panel.futureEmptyText} />;
   }
 
   return (
     <div className="future-groups">
-      <TaskCollection title="逾期" tasks={groups.overdue} emptyTitle="" emptyText="" onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />
-      <TaskCollection title="今天" tasks={groups.today} emptyTitle="" emptyText="" onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />
+      <TaskCollection title={APP_COPY.capture.panel.overdue} tasks={groups.overdue} emptyTitle="" emptyText="" onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />
+      <TaskCollection title={APP_COPY.capture.panel.today} tasks={groups.today} emptyTitle="" emptyText="" onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />
       {groups.upcoming.map((group) => (
         <TaskCollection key={group.key} title={group.label} tasks={group.tasks} emptyTitle="" emptyText="" onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />
       ))}
@@ -471,13 +446,13 @@ function FutureTasks({ groups, empty, laterExpanded, onToggleLater, onComplete, 
         <section className="task-group later-group">
           <button className="later-toggle" onClick={onToggleLater} aria-expanded={laterExpanded}>
             <ChevronRight size={16} className={cn("transition-transform", laterExpanded && "rotate-90")} />
-            <span>以后</span>
+            <span>{APP_COPY.capture.panel.later}</span>
             <span className="task-group-count">{groups.later.length}</span>
           </button>
           {laterExpanded && <div className="task-list">{groups.later.map((task) => <TaskItem key={task.id} task={task} onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />)}</div>}
         </section>
       )}
-      <TaskCollection title="待安排" tasks={groups.unscheduled} emptyTitle="" emptyText="" onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />
+      <TaskCollection title={APP_COPY.capture.panel.unscheduled} tasks={groups.unscheduled} emptyTitle="" emptyText="" onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />
     </div>
   );
 }
@@ -496,19 +471,19 @@ function WeeklyPanel({ reports, current, busy, onGenerate, onSelect }: {
   return (
     <div className="weekly-panel">
       <div className="weekly-actions">
-        <p>回顾完成过的事，也为下一周留出空间。</p>
+        <p>{APP_COPY.capture.weekly.intro}</p>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => onGenerate(false)} disabled={busy}>生成数据版</Button>
-          <Button onClick={() => onGenerate(true)} disabled={busy}><Sparkles size={16} />AI 总结</Button>
+          <Button variant="outline" onClick={() => onGenerate(false)} disabled={busy}>{APP_COPY.capture.weekly.generateData}</Button>
+          <Button onClick={() => onGenerate(true)} disabled={busy}><Sparkles size={16} />{APP_COPY.capture.weekly.generateAi}</Button>
         </div>
       </div>
       <div className="report-layout">
         <aside className="report-list">
-          {reports.length === 0 && <p className="p-4 text-sm text-muted-foreground">还没有周总结。</p>}
-          {reports.map((report) => <button key={report.id} onClick={() => onSelect(report)}><strong>{report.periodStart.slice(0, 10)}</strong><span>{report.aiStatus === "generated" ? "AI 版" : "数据版"}</span></button>)}
+          {reports.length === 0 && <p className="p-4 text-sm text-muted-foreground">{APP_COPY.capture.weekly.emptyList}</p>}
+          {reports.map((report) => <button key={report.id} onClick={() => onSelect(report)}><strong>{report.periodStart.slice(0, 10)}</strong><span>{report.aiStatus === "generated" ? APP_COPY.capture.weekly.aiReport : APP_COPY.capture.weekly.dataReport}</span></button>)}
         </aside>
         <article className="report-paper">
-          {current ? <pre>{current.contentMarkdown}</pre> : <EmptyState title="生成第一份周总结" text="Cadence 会根据本地任务历史整理完成情况与下周重点。" />}
+          {current ? <pre>{current.contentMarkdown}</pre> : <EmptyState title={APP_COPY.capture.weekly.emptyTitle} text={APP_COPY.capture.weekly.emptyText} />}
         </article>
       </div>
     </div>

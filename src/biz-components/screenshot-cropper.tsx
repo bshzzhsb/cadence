@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Crop, X } from "lucide-react";
 import { Button } from "@/components/button";
+import { APP_COPY } from "@/lib/copy";
 
 interface Point { x: number; y: number }
 
@@ -25,12 +26,12 @@ export function ScreenshotCropper({ image, onCancel, onConfirm }: { image: strin
     await onConfirm(canvas.toDataURL("image/jpeg", 0.85)); setBusy(false);
   };
 
-  return <div className="dialog-backdrop"><section className="crop-dialog" role="dialog" aria-modal="true" aria-label="框选屏幕内容">
-    <header><div><strong><Crop size={16} /> 框选要识别的区域</strong><p>拖动鼠标选择；不框选则识别整个屏幕。</p></div><Button variant="ghost" size="icon" onClick={onCancel} aria-label="关闭截图"><X size={18} /></Button></header>
+  return <div className="dialog-backdrop"><section className="crop-dialog" role="dialog" aria-modal="true" aria-label={APP_COPY.screenshotCropper.dialogLabel}>
+    <header><div><strong><Crop size={16} /> {APP_COPY.screenshotCropper.title}</strong><p>{APP_COPY.screenshotCropper.body}</p></div><Button variant="ghost" size="icon" onClick={onCancel} aria-label={APP_COPY.screenshotCropper.close}><X size={18} /></Button></header>
     <div className="crop-stage" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const value = point(event); setStart(value); setEnd(value); setDragging(true); }} onPointerMove={(event) => dragging && setEnd(point(event))} onPointerUp={() => setDragging(false)}>
-      <img ref={imageRef} src={image} alt="待识别的屏幕截图" draggable={false} />
+      <img ref={imageRef} src={image} alt={APP_COPY.screenshotCropper.imageAlt} draggable={false} />
       {selection && <span className="crop-selection" style={{ left: selection.left, top: selection.top, width: selection.width, height: selection.height }} />}
     </div>
-    <footer><Button variant="ghost" onClick={onCancel}>取消</Button><Button onClick={confirm} disabled={busy}>{busy ? "正在识别…" : "识别选中区域"}</Button></footer>
+    <footer><Button variant="ghost" onClick={onCancel}>{APP_COPY.screenshotCropper.cancel}</Button><Button onClick={confirm} disabled={busy}>{busy ? APP_COPY.screenshotCropper.recognizing : APP_COPY.screenshotCropper.recognizeSelection}</Button></footer>
   </section></div>;
 }

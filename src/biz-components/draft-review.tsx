@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Sparkles, X } from "lucide-react";
+import { APP_COPY } from "@/lib/copy";
 import type { TaskDraft } from "@/lib/types";
 import { formatDue } from "@/lib/utils";
 import { Badge } from "@/components/badge";
@@ -30,14 +31,14 @@ export function DraftReview({ drafts, onCancel, onConfirm }: DraftReviewProps) {
         <header className="flex items-start justify-between gap-4">
           <div>
             <div className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold text-primary">
-              <Sparkles size={14} /> 智能识别
+              <Sparkles size={14} /> {APP_COPY.draftReview.eyebrow}
             </div>
             <h2 id="draft-title" ref={headingRef} tabIndex={-1} className="text-xl font-semibold outline-none">
-              确认要创建的任务
+              {APP_COPY.draftReview.title}
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">Cadence 不会在你确认前写入任务。</p>
+            <p className="mt-1 text-sm text-muted-foreground">{APP_COPY.draftReview.body}</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={onCancel} aria-label="关闭">
+          <Button variant="ghost" size="icon" onClick={onCancel} aria-label={APP_COPY.draftReview.close}>
             <X size={18} />
           </Button>
         </header>
@@ -61,7 +62,7 @@ export function DraftReview({ drafts, onCancel, onConfirm }: DraftReviewProps) {
                 <span className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
                   <span>{formatDue(draft.dueAt ?? null)}</span>
                   {draft.tags.map((tag) => <Badge key={tag}>#{tag}</Badge>)}
-                  {draft.uncertainFields.length > 0 && <Badge className="border-amber-200 bg-amber-50 text-amber-700">需要确认</Badge>}
+                  {draft.uncertainFields.length > 0 && <Badge className="border-amber-200 bg-amber-50 text-amber-700">{APP_COPY.draftReview.needsConfirmation}</Badge>}
                 </span>
               </span>
             </label>
@@ -69,9 +70,9 @@ export function DraftReview({ drafts, onCancel, onConfirm }: DraftReviewProps) {
         </div>
 
         <footer className="flex items-center justify-between border-t border-border pt-4">
-          <span className="text-xs text-muted-foreground">已选择 {selected.length} / {items.length}</span>
+          <span className="text-xs text-muted-foreground">{APP_COPY.draftReview.selectedCount(selected.length, items.length)}</span>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={onCancel}>取消</Button>
+            <Button variant="ghost" onClick={onCancel}>{APP_COPY.draftReview.cancel}</Button>
             <Button
               disabled={!selected.length || saving}
               onClick={async () => {
@@ -80,7 +81,7 @@ export function DraftReview({ drafts, onCancel, onConfirm }: DraftReviewProps) {
                 setSaving(false);
               }}
             >
-              {saving ? "正在创建…" : `创建 ${selected.length} 项任务`}
+              {saving ? APP_COPY.draftReview.saving : APP_COPY.draftReview.createTasks(selected.length)}
             </Button>
           </div>
         </footer>
