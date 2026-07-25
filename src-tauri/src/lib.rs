@@ -55,6 +55,9 @@ const CAPTURE_COMPACT_WINDOW_HEIGHT: f64 =
     CAPTURE_COMPACT_CONTENT_HEIGHT + CAPTURE_SHADOW_MARGIN * 2.0;
 const CAPTURE_PANEL_WINDOW_HEIGHT: f64 = CAPTURE_PANEL_CONTENT_HEIGHT + CAPTURE_SHADOW_MARGIN * 2.0;
 const TRANSPARENT_BACKGROUND: Color = Color(0, 0, 0, 0);
+#[cfg(target_os = "windows")]
+const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-icon-windows.png");
+#[cfg(not(target_os = "windows"))]
 const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-icon.png");
 
 fn normalize_screenshot_selection(
@@ -844,6 +847,27 @@ fn spawn_reminder_worker(app: tauri::AppHandle, db: Arc<Database>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tray_icon_preserves_transparency() {
+        let icon = image::load_from_memory(TRAY_ICON_BYTES)
+            .expect("tray icon should be a valid PNG")
+            .to_rgba8();
+
+        assert!(icon.pixels().any(|pixel| pixel[3] == 0));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_tray_icon_has_dark_visible_pixels() {
+        let icon = image::load_from_memory(TRAY_ICON_BYTES)
+            .expect("Windows tray icon should be a valid PNG")
+            .to_rgba8();
+
+        assert!(icon
+            .pixels()
+            .any(|pixel| pixel[3] > 0 && pixel[0] < 220 && pixel[1] < 220 && pixel[2] < 220));
+    }
 
     #[test]
     fn converts_logical_screenshot_selection_to_physical_pixels() {
