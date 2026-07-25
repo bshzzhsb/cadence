@@ -11,7 +11,7 @@ node_modules
 dist
 dist-ssr
 src-tauri/target
-.codex/
+.codex/cargo-dev-target
 *.local
 .env
 .env.*
