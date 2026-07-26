@@ -1,10 +1,24 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/app";
 import * as api from "@/lib/api";
 import { APP_COPY } from "@/lib/copy";
 import { defaultSettings, type Task } from "@/lib/types";
+
+const appCss = readFileSync(path.resolve(process.cwd(), "src/app.css"), "utf8");
+const eventListeners = new Map<string, (event: { payload: unknown }) => void>();
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (event: string, handler: (event: { payload: unknown }) => void) => {
+    eventListeners.set(event, handler);
+    return () => {
+      if (eventListeners.get(event) === handler) eventListeners.delete(event);
+    };
+  }),
+}));
 
 vi.mock("@/lib/api", () => ({
   analyzeImage: vi.fn(),
@@ -60,6 +74,7 @@ describe("expanded task panel", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    eventListeners.clear();
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: vi.fn().mockReturnValue({ matches: false }),
@@ -73,6 +88,8 @@ describe("expanded task panel", () => {
 
   afterEach(() => {
     cleanup();
+    eventListeners.clear();
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });
 
   it("opens without panel heading or search, and keeps later tasks manually expandable", async () => {
@@ -134,5 +151,65 @@ describe("expanded task panel", () => {
 
     await waitFor(() => expect(api.scheduleManualRecognition).toHaveBeenCalledWith("明天下午交方案"));
     expect(api.hideCaptureWindow).toHaveBeenCalled();
+  });
+
+  it("does not lock the capture input while the screenshot window is starting", async () => {
+    let resolveStart!: () => void;
+    vi.mocked(api.startScreenshotSelection).mockReturnValue(new Promise<void>((resolve) => {
+      resolveStart = resolve;
+    }));
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: APP_COPY.capture.actions.captureScreen }));
+
+    expect(screen.queryByLabelText(APP_COPY.capture.actions.processing)).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(api.hideCaptureWindow).toHaveBeenCalledTimes(1));
+
+    resolveStart();
+  });
+
+  it("restores the capture controls when screenshot startup fails", async () => {
+    vi.mocked(api.startScreenshotSelection).mockRejectedValue(new Error("截图窗口启动失败"));
+    render(<App />);
+
+    const button = screen.getByRole("button", { name: APP_COPY.capture.actions.captureScreen });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Error: 截图窗口启动失败"));
+    expect(screen.queryByLabelText(APP_COPY.capture.actions.processing)).not.toBeInTheDocument();
+    expect(button).not.toBeDisabled();
+  });
+
+  it("clears stale loading when the native capture window is restored", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    let resolveClipboard!: (value: { type: "text"; content: string }) => void;
+    vi.mocked(api.readClipboardPayload).mockReturnValue(new Promise((resolve) => {
+      resolveClipboard = resolve;
+    }));
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: APP_COPY.capture.actions.readClipboard }));
+    expect(await screen.findByLabelText(APP_COPY.capture.actions.processing)).toBeInTheDocument();
+    await waitFor(() => expect(eventListeners.has("capture:mode")).toBe(true));
+
+    await act(async () => {
+      eventListeners.get("capture:mode")?.({ payload: "compact" });
+    });
+
+    await waitFor(() => expect(screen.queryByLabelText(APP_COPY.capture.actions.processing)).not.toBeInTheDocument());
+    await act(async () => {
+      resolveClipboard({ type: "text", content: "恢复后的文本" });
+    });
+  });
+});
+
+describe("capture input styles", () => {
+  it("keeps placeholder tracking stable while focused", () => {
+    expect(appCss).not.toMatch(/\.capture-input\s*\{[^}]*letter-spacing/);
+    expect(appCss).not.toMatch(/\.capture-input:focus\s*\{[^}]*letter-spacing/);
+    expect(appCss).not.toMatch(/\.capture-bar:focus-within/);
+    expect(appCss).not.toMatch(/\.capture-bar::after/);
   });
 });

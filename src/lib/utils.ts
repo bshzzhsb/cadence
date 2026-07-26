@@ -35,9 +35,7 @@ export function isOverdue(value: string | null) {
   return Boolean(value && new Date(value).getTime() < Date.now());
 }
 
-export function applyTheme(theme: "system" | "light" | "dark") {
-  const dark =
-    theme === "dark" ||
-    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.classList.toggle("dark", dark);
+export function applyTheme() {
+  document.documentElement.classList.remove("dark");
+  document.documentElement.style.colorScheme = "light";
 }

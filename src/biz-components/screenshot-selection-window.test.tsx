@@ -58,7 +58,9 @@ describe("ScreenshotSelectionWindow", () => {
   });
 
   it("shows a submit error and re-enables the selection controls", async () => {
-    vi.mocked(api.submitScreenshotSelection).mockRejectedValue(new Error("截图失败"));
+    vi.mocked(api.submitScreenshotSelection)
+      .mockRejectedValueOnce(new Error("截图失败"))
+      .mockResolvedValueOnce();
     render(<ScreenshotSelectionWindow />);
 
     const stage = document.querySelector<HTMLDivElement>(".screenshot-selection-stage")!;
@@ -81,6 +83,10 @@ describe("ScreenshotSelectionWindow", () => {
     fireEvent.click(await screen.findByRole("button", { name: APP_COPY.screenshotSelection.actions.recognizeSelection }));
 
     await waitFor(() => expect(screen.getByText("Error: 截图失败")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: APP_COPY.screenshotSelection.actions.recognizeSelection })).not.toBeDisabled();
+    const recognizeButton = screen.getByRole("button", { name: APP_COPY.screenshotSelection.actions.recognizeSelection });
+    expect(recognizeButton).not.toBeDisabled();
+
+    fireEvent.click(recognizeButton);
+    await waitFor(() => expect(api.submitScreenshotSelection).toHaveBeenCalledTimes(2));
   });
 });

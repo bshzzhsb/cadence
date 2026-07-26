@@ -199,11 +199,17 @@ fn resize_capture(app: &AppHandle, mode: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn screenshot_selection_is_open(app: &AppHandle) -> bool {
+    app.get_webview_window(SCREENSHOT_SELECTION_WINDOW_LABEL)
+        .and_then(|window| window.is_visible().ok())
+        .unwrap_or(false)
+}
+
+fn should_hide_capture_on_focus_loss(screenshot_selection_open: bool) -> bool {
+    !screenshot_selection_open
+}
+
 fn show_capture(app: &AppHandle, mode: &str) -> Result<(), String> {
-    // Showing the capture window is also the native escape hatch from the
-    // full-screen screenshot window. Keep this cleanup here so tray actions,
-    // the global shortcut, and error recovery all behave consistently.
-    hide_screenshot_selection(app)?;
     make_capture_background_transparent(app);
     resize_capture(app, mode)?;
     position_capture_window(app);
@@ -220,8 +226,25 @@ fn show_capture(app: &AppHandle, mode: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn restore_capture(app: &AppHandle, mode: &str) -> Result<(), String> {
+    let cleanup_error = close_screenshot_selection(app).err();
+    let show_result = show_capture(app, mode);
+
+    match (cleanup_error, show_result) {
+        (None, result) => result,
+        (Some(cleanup_error), Ok(())) => {
+            eprintln!("{}", copy::log_close_screenshot_failed(&cleanup_error));
+            Ok(())
+        }
+        (Some(cleanup_error), Err(recovery_error)) => Err(copy::restore_capture_failed(
+            &cleanup_error,
+            &recovery_error,
+        )),
+    }
+}
+
 fn try_show_capture(app: &AppHandle, mode: &str) {
-    if let Err(error) = show_capture(app, mode) {
+    if let Err(error) = restore_capture(app, mode) {
         eprintln!("{}", copy::log_show_capture_failed(&error));
     }
 }
@@ -242,8 +265,8 @@ fn open_settings(app: &AppHandle) {
             WebviewUrl::App("index.html?window=settings".into()),
         )
         .title(copy::SETTINGS_WINDOW_TITLE)
-        .inner_size(900.0, 720.0)
-        .min_inner_size(720.0, 560.0)
+        .inner_size(820.0, 620.0)
+        .min_inner_size(660.0, 480.0)
         .build()
         {
             let _ = window.set_focus();
@@ -252,7 +275,7 @@ fn open_settings(app: &AppHandle) {
 }
 
 fn open_screenshot_selection(app: &AppHandle) -> Result<(), String> {
-    destroy_screenshot_selection(app)?;
+    close_screenshot_selection(app)?;
 
     let main = app
         .get_webview_window(CAPTURE_WINDOW_LABEL)
@@ -303,7 +326,7 @@ fn open_screenshot_selection(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn destroy_screenshot_selection(app: &AppHandle) -> Result<(), String> {
+fn close_screenshot_selection(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(SCREENSHOT_SELECTION_WINDOW_LABEL) {
         if let Err(destroy_error) = window.destroy() {
             return match window.hide() {
@@ -318,22 +341,8 @@ fn destroy_screenshot_selection(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn hide_screenshot_selection(app: &AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window(SCREENSHOT_SELECTION_WINDOW_LABEL) {
-        if let Err(hide_error) = window.hide() {
-            window.destroy().map_err(|destroy_error| {
-                copy::screenshot_hide_destroy_failed(
-                    &hide_error.to_string(),
-                    &destroy_error.to_string(),
-                )
-            })?;
-        }
-    }
-    Ok(())
-}
-
 fn dismiss_screenshot_selection(app: &AppHandle) -> Result<(), String> {
-    show_capture(app, "compact")
+    restore_capture(app, "compact")
 }
 
 fn recognition_summary(drafts: &[TaskDraft]) -> String {
@@ -542,6 +551,7 @@ fn capture_set_mode(app: AppHandle, mode: String) -> Result<(), String> {
 #[tauri::command]
 fn capture_hide(app: AppHandle) -> Result<(), String> {
     resize_capture(&app, "compact")?;
+    close_screenshot_selection(&app)?;
     if let Some(window) = app.get_webview_window(CAPTURE_WINDOW_LABEL) {
         window.hide().map_err(|error| error.to_string())?;
     }
@@ -550,13 +560,25 @@ fn capture_hide(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn screenshot_selection_start(app: AppHandle) -> Result<(), String> {
+    open_screenshot_selection(&app)?;
+
     if let Some(window) = app.get_webview_window(CAPTURE_WINDOW_LABEL) {
-        window.hide().map_err(|error| error.to_string())?;
-    }
-    if let Err(error) = open_screenshot_selection(&app) {
-        return match show_capture(&app, "compact") {
-            Ok(()) => Err(error),
-            Err(recovery_error) => Err(copy::restore_capture_failed(&error, &recovery_error)),
+        if let Err(error) = window.hide() {
+            return match restore_capture(&app, "compact") {
+                Ok(()) => Err(error.to_string()),
+                Err(recovery_error) => Err(copy::restore_capture_failed(
+                    &error.to_string(),
+                    &recovery_error,
+                )),
+            };
+        }
+    } else {
+        return match restore_capture(&app, "compact") {
+            Ok(()) => Err(copy::ERR_CAPTURE_WINDOW_NOT_FOUND.into()),
+            Err(recovery_error) => Err(copy::restore_capture_failed(
+                copy::ERR_CAPTURE_WINDOW_NOT_FOUND,
+                &recovery_error,
+            )),
         };
     }
     Ok(())
@@ -571,14 +593,14 @@ fn screenshot_selection_submit(
     let region = match screenshot_region(&app, &selection) {
         Ok(region) => region,
         Err(error) => {
-            return match dismiss_screenshot_selection(&app) {
+            return match restore_capture(&app, "compact") {
                 Ok(()) => Err(error),
                 Err(recovery_error) => Err(copy::restore_capture_failed(&error, &recovery_error)),
             };
         }
     };
-    if let Err(error) = hide_screenshot_selection(&app) {
-        return match show_capture(&app, "compact") {
+    if let Err(error) = close_screenshot_selection(&app) {
+        return match restore_capture(&app, "compact") {
             Ok(()) => Err(error),
             Err(recovery_error) => Err(copy::restore_capture_failed(&error, &recovery_error)),
         };
@@ -597,7 +619,7 @@ fn screenshot_selection_submit(
         .await
         .map_err(|error| error.to_string())
         .and_then(|result| result);
-        let restore_error = show_capture(&app, "compact").err();
+        let restore_error = restore_capture(&app, "compact").err();
 
         let result = match captured {
             Ok(data_url) => {
@@ -622,7 +644,7 @@ fn screenshot_selection_submit(
 
 #[tauri::command]
 fn screenshot_selection_cancel(app: AppHandle) -> Result<(), String> {
-    dismiss_screenshot_selection(&app)
+    restore_capture(&app, "compact")
 }
 
 #[tauri::command]
@@ -711,6 +733,7 @@ fn settings_update(
     settings: AppSettings,
     secrets: Option<SecretUpdates>,
 ) -> Result<(), String> {
+    let settings = settings.normalized();
     if let Some(secrets) = secrets {
         if let Some(key) = secrets.ai_key.filter(|value| !value.is_empty()) {
             integrations::save_secret("ai-api-key", &key)?;
@@ -930,6 +953,12 @@ mod tests {
             PhysicalPosition::new(-1332, 48)
         );
     }
+
+    #[test]
+    fn keeps_capture_visible_during_screenshot_transition() {
+        assert!(!should_hide_capture_on_focus_loss(true));
+        assert!(should_hide_capture_on_focus_loss(false));
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -980,7 +1009,10 @@ pub fn run() {
                         let _ = window.hide();
                     }
                     WindowEvent::Focused(false) => {
-                        let _ = window.hide();
+                        let app = window.app_handle();
+                        if should_hide_capture_on_focus_loss(screenshot_selection_is_open(&app)) {
+                            let _ = window.hide();
+                        }
                     }
                     _ => {}
                 }

@@ -65,7 +65,7 @@ impl Default for AppSettings {
             weekly_day: 0,
             weekly_time: "20:00".into(),
             weekly_enabled: true,
-            theme: "system".into(),
+            theme: "light".into(),
             ai_base_url: String::new(),
             ai_text_model: String::new(),
             ai_vision_model: String::new(),
@@ -77,8 +77,24 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
-    pub fn normalized(self) -> Self {
+    pub fn normalized(mut self) -> Self {
+        self.theme = "light".into();
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppSettings;
+
+    #[test]
+    fn normalizes_all_legacy_themes_to_light() {
+        for theme in ["system", "dark", "light", "unknown"] {
+            let mut settings = AppSettings::default();
+            settings.theme = theme.into();
+
+            assert_eq!(settings.normalized().theme, "light");
+        }
     }
 }
 

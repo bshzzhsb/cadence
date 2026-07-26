@@ -67,6 +67,7 @@ export default function App() {
   const [laterExpanded, setLaterExpanded] = useState(false);
   const [message, setMessage] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const screenshotLaunchingRef = useRef(false);
 
   const announce = useCallback((text: string) => {
     setMessage(text);
@@ -98,6 +99,8 @@ export default function App() {
 
   const hideWindow = useCallback(async () => {
     setMode("compact");
+    setBusy(false);
+    screenshotLaunchingRef.current = false;
     setClipboardCandidate(null);
     try {
       await hideCaptureWindow();
@@ -107,7 +110,7 @@ export default function App() {
   }, [announce]);
 
   useEffect(() => {
-    void getSettings().then((value) => applyTheme(value.theme));
+    void getSettings().then(() => applyTheme());
   }, []);
 
   useEffect(() => {
@@ -124,14 +127,16 @@ export default function App() {
         setLaterExpanded(false);
       }
       if (payload === "compact") {
+        setBusy(false);
+        screenshotLaunchingRef.current = false;
         setClipboardCandidate(null);
       }
     }).then((unlisten) => {
       removeModeListener = unlisten;
     });
 
-    void listen<AppSettings>("settings:updated", ({ payload }) => {
-      applyTheme(payload.theme);
+    void listen<AppSettings>("settings:updated", () => {
+      applyTheme();
     }).then((unlisten) => {
       removeSettingsListener = unlisten;
     });
@@ -262,13 +267,15 @@ export default function App() {
   };
 
   const captureScreen = async () => {
-    setBusy(true);
+    if (screenshotLaunchingRef.current) return;
+
+    screenshotLaunchingRef.current = true;
     try {
       await startScreenshotSelection();
     } catch (error) {
       announce(String(error));
     } finally {
-      setBusy(false);
+      screenshotLaunchingRef.current = false;
     }
   };
 
@@ -280,11 +287,11 @@ export default function App() {
     : APP_COPY.capture.placeholder.default;
 
   return (
-    <main className={cn("capture-shell", mode === "panel" && "capture-shell-expanded")}>
-      <header className="capture-bar" data-tauri-drag-region>
-        <div className="capture-input-wrap">
-          <img src={cadenceLogo} className="capture-logo" alt="" aria-hidden="true" />
-          <form onSubmit={handleCreate} className="capture-form">
+    <main className="relative isolate fixed inset-[var(--capture-shadow-margin)] flex h-auto flex-col overflow-hidden rounded-[18px] border border-border bg-background shadow-cadence-shell animate-cadence-shell-breathe before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:rounded-[inherit] before:bg-cadence-edge before:bg-[length:240%_100%] before:content-[''] before:animate-cadence-edge-sweep">
+      <header className={cn("relative z-10 flex h-[60px] min-h-0 flex-none items-center gap-2 bg-card py-2 pl-[14px] pr-[10px]", mode === "compact" && "h-full", mode === "panel" && "border-b border-border")} data-tauri-drag-region>
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <img src={cadenceLogo} className="h-7 w-7 flex-none rounded-lg object-cover" alt="" aria-hidden="true" />
+          <form onSubmit={handleCreate} className="flex min-w-0 flex-1">
             <input
               id="quick-capture"
               ref={inputRef}
@@ -293,7 +300,7 @@ export default function App() {
                 setInput(event.target.value);
                 if (clipboardCandidate) setClipboardCandidate(null);
               }}
-              className="capture-input"
+              className="w-full min-w-0 border-0 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
               placeholder={capturePlaceholder}
               aria-label={APP_COPY.capture.actions.quickAdd}
             />
@@ -301,9 +308,9 @@ export default function App() {
           </form>
           {busy && <LoaderCircle size={16} className="animate-spin text-muted-foreground" aria-label={APP_COPY.capture.actions.processing} />}
         </div>
-        <div className="capture-actions" data-tauri-drag-region="false">
+        <div className="flex flex-none items-center gap-px" data-tauri-drag-region="false">
           {clipboardCandidate && (
-            <Button variant="outline" size="sm" className="clipboard-confirm" onClick={confirmClipboardRecognition} disabled={busy} aria-label={APP_COPY.capture.actions.confirmClipboardRecognition} title={APP_COPY.capture.actions.confirmClipboardRecognition}>
+            <Button variant="outline" size="sm" className="gap-[5px] rounded-[10px] px-2.5" onClick={confirmClipboardRecognition} disabled={busy} aria-label={APP_COPY.capture.actions.confirmClipboardRecognition} title={APP_COPY.capture.actions.confirmClipboardRecognition}>
               <Sparkles size={15} /> {APP_COPY.capture.actions.recognize}
             </Button>
           )}
@@ -328,12 +335,15 @@ export default function App() {
       </header>
 
       {mode === "panel" && (
-        <section className="task-panel" aria-label={APP_COPY.capture.panel.label}>
-          <nav className="panel-tabs" aria-label={APP_COPY.capture.panel.tabsLabel}>
+        <section className="flex min-h-0 flex-1 flex-col px-[25px] pt-[14px] animate-cadence-fade-up max-[620px]:px-[17px]" aria-label={APP_COPY.capture.panel.label}>
+          <nav className="flex flex-none gap-1 border-b border-border" aria-label={APP_COPY.capture.panel.tabsLabel}>
             {tabs.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
-                className={cn("panel-tab", tab === id && "panel-tab-active")}
+                className={cn(
+                  "relative inline-flex items-center gap-1.5 border-0 border-b-2 border-transparent bg-transparent px-2.5 pb-2.5 pt-[9px] text-[13px] font-semibold text-muted-foreground transition-[color,transform] duration-[var(--motion-standard)] ease-cadence hover:-translate-y-px hover:text-foreground motion-reduce:hover:transform-none",
+                  tab === id && "text-primary after:absolute after:bottom-[-2px] after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-primary after:shadow-[0_0_12px_hsl(var(--tech-glow)/.34)] after:content-[''] after:animate-cadence-indicator-in",
+                )}
                 onClick={() => {
                   setTab(id);
                   if (id === "future") setLaterExpanded(false);
@@ -345,7 +355,7 @@ export default function App() {
             ))}
           </nav>
 
-          <div className="panel-content" aria-busy={busy}>
+          <div className="cadence-scrollbar min-h-0 flex-1 overflow-y-auto pb-7 pt-5" aria-busy={busy}>
             {tab === "future" && (
               <FutureTasks
                 groups={futureGroups}
@@ -394,7 +404,7 @@ export default function App() {
       )}
 
       <div className="sr-only" aria-live="polite" aria-atomic="true">{message}</div>
-      {message && <div className="toast" role="status"><CheckCircle2 size={16} />{message}</div>}
+      {message && <div className="fixed bottom-4 right-4 z-[90] flex items-center gap-2 rounded-xl border border-border bg-foreground px-3 py-2 text-xs text-background shadow-xl" role="status"><CheckCircle2 size={16} />{message}</div>}
     </main>
   );
 }
@@ -416,9 +426,9 @@ function TaskCollection({ title, tasks, emptyTitle, emptyText, onComplete, onReo
   }
 
   return (
-    <section className="task-group">
-      <h2 className="task-group-title">{title}<span>{tasks.length}</span></h2>
-      <div className="task-list">
+    <section className="min-w-0">
+      <h2 className="mb-[7px] flex w-full items-center gap-[7px] px-0.5 text-left text-xs font-bold text-muted-foreground">{title}<span className="inline-grid h-[19px] min-w-[19px] place-items-center rounded-full bg-secondary px-[5px] text-[10px] text-muted-foreground">{tasks.length}</span></h2>
+      <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-cadence-card animate-cadence-fade-up">
         {tasks.map((task) => <TaskItem key={task.id} task={task} onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />)}
       </div>
     </section>
@@ -436,20 +446,20 @@ function FutureTasks({ groups, empty, laterExpanded, onToggleLater, onComplete, 
   }
 
   return (
-    <div className="future-groups">
+    <div className="flex flex-col gap-[18px]">
       <TaskCollection title={APP_COPY.capture.panel.overdue} tasks={groups.overdue} emptyTitle="" emptyText="" onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />
       <TaskCollection title={APP_COPY.capture.panel.today} tasks={groups.today} emptyTitle="" emptyText="" onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />
       {groups.upcoming.map((group) => (
         <TaskCollection key={group.key} title={group.label} tasks={group.tasks} emptyTitle="" emptyText="" onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />
       ))}
       {groups.later.length > 0 && (
-        <section className="task-group later-group">
-          <button className="later-toggle" onClick={onToggleLater} aria-expanded={laterExpanded}>
+        <section className="min-w-0">
+          <button className="mb-[7px] flex w-full items-center gap-[7px] border-0 bg-transparent px-0.5 py-1.5 text-left text-xs font-bold text-foreground hover:text-primary" onClick={onToggleLater} aria-expanded={laterExpanded}>
             <ChevronRight size={16} className={cn("transition-transform", laterExpanded && "rotate-90")} />
             <span>{APP_COPY.capture.panel.later}</span>
-            <span className="task-group-count">{groups.later.length}</span>
+            <span className="inline-grid h-[19px] min-w-[19px] place-items-center rounded-full bg-secondary px-[5px] text-[10px] text-muted-foreground">{groups.later.length}</span>
           </button>
-          {laterExpanded && <div className="task-list">{groups.later.map((task) => <TaskItem key={task.id} task={task} onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />)}</div>}
+          {laterExpanded && <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-cadence-card animate-cadence-fade-up">{groups.later.map((task) => <TaskItem key={task.id} task={task} onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />)}</div>}
         </section>
       )}
       <TaskCollection title={APP_COPY.capture.panel.unscheduled} tasks={groups.unscheduled} emptyTitle="" emptyText="" onComplete={onComplete} onReopen={onReopen} onDelete={onDelete} />
@@ -458,7 +468,7 @@ function FutureTasks({ groups, empty, laterExpanded, onToggleLater, onComplete, 
 }
 
 function EmptyState({ title, text }: { title: string; text: string }) {
-  return <div className="empty-state"><Archive size={28} /><h2>{title}</h2><p>{text}</p></div>;
+  return <div className="flex min-h-[240px] flex-col items-center justify-center p-9 text-center text-muted-foreground"><Archive size={28} className="mb-3 text-primary opacity-80" /><h2 className="m-0 font-serif text-lg text-foreground">{title}</h2><p className="mt-2 mb-0 text-[13px]">{text}</p></div>;
 }
 
 function WeeklyPanel({ reports, current, busy, onGenerate, onSelect }: {
@@ -469,21 +479,21 @@ function WeeklyPanel({ reports, current, busy, onGenerate, onSelect }: {
   onSelect: (report: WeeklyReport) => void;
 }) {
   return (
-    <div className="weekly-panel">
-      <div className="weekly-actions">
-        <p>{APP_COPY.capture.weekly.intro}</p>
+    <div className="flex min-h-full flex-col">
+      <div className="mb-[18px] flex items-center justify-between gap-[14px] max-[620px]:items-start max-[620px]:flex-col">
+        <p className="m-0 text-[13px] text-muted-foreground">{APP_COPY.capture.weekly.intro}</p>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => onGenerate(false)} disabled={busy}>{APP_COPY.capture.weekly.generateData}</Button>
           <Button onClick={() => onGenerate(true)} disabled={busy}><Sparkles size={16} />{APP_COPY.capture.weekly.generateAi}</Button>
         </div>
       </div>
-      <div className="report-layout">
-        <aside className="report-list">
+      <div className="grid min-h-[300px] flex-1 grid-cols-[155px_minmax(0,1fr)] gap-[14px] max-[620px]:grid-cols-1">
+        <aside className="cadence-scrollbar overflow-hidden overflow-y-auto rounded-[14px] border border-border bg-card shadow-cadence-card animate-cadence-fade-up">
           {reports.length === 0 && <p className="p-4 text-sm text-muted-foreground">{APP_COPY.capture.weekly.emptyList}</p>}
-          {reports.map((report) => <button key={report.id} onClick={() => onSelect(report)}><strong>{report.periodStart.slice(0, 10)}</strong><span>{report.aiStatus === "generated" ? APP_COPY.capture.weekly.aiReport : APP_COPY.capture.weekly.dataReport}</span></button>)}
+          {reports.map((report) => <button key={report.id} className="flex w-full flex-col gap-[3px] border-0 border-b border-border bg-transparent p-3 text-left transition-[background,transform] duration-[var(--motion-standard)] ease-cadence hover:translate-x-0.5 hover:bg-accent motion-reduce:hover:transform-none" onClick={() => onSelect(report)}><strong>{report.periodStart.slice(0, 10)}</strong><span className="text-[11px] text-muted-foreground">{report.aiStatus === "generated" ? APP_COPY.capture.weekly.aiReport : APP_COPY.capture.weekly.dataReport}</span></button>)}
         </aside>
-        <article className="report-paper">
-          {current ? <pre>{current.contentMarkdown}</pre> : <EmptyState title={APP_COPY.capture.weekly.emptyTitle} text={APP_COPY.capture.weekly.emptyText} />}
+        <article className="min-w-0 overflow-hidden rounded-[14px] border border-border bg-card p-5 shadow-cadence-card animate-cadence-fade-up">
+          {current ? <pre className="m-0 whitespace-pre-wrap font-sans text-[13px] leading-[1.75]">{current.contentMarkdown}</pre> : <EmptyState title={APP_COPY.capture.weekly.emptyTitle} text={APP_COPY.capture.weekly.emptyText} />}
         </article>
       </div>
     </div>

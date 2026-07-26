@@ -48,7 +48,8 @@ impl Database {
     }
 
     pub fn save_settings(&self, settings: &AppSettings) -> Result<(), String> {
-        let raw = serde_json::to_string(settings).map_err(|error| error.to_string())?;
+        let normalized = settings.clone().normalized();
+        let raw = serde_json::to_string(&normalized).map_err(|error| error.to_string())?;
         self.connection.lock().map_err(|error| error.to_string())?.execute("INSERT INTO settings(key,value) VALUES('app',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![raw]).map_err(|error| error.to_string())?;
         Ok(())
     }
@@ -331,6 +332,17 @@ mod tests {
         db.save_settings(&settings).unwrap();
 
         assert_eq!(db.settings().unwrap(), settings);
+    }
+
+    #[test]
+    fn normalizes_legacy_theme_before_persisting() {
+        let db = Database::open(":memory:".into()).unwrap();
+        let mut settings = AppSettings::default();
+        settings.theme = "dark".into();
+
+        db.save_settings(&settings).unwrap();
+
+        assert_eq!(db.settings().unwrap().theme, "light");
     }
 
     #[test]

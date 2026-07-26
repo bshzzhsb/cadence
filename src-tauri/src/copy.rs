@@ -45,13 +45,6 @@ pub fn screenshot_destroy_hide_failed(destroy_error: &str, hide_error: &str) -> 
     )
 }
 
-pub fn screenshot_hide_destroy_failed(hide_error: &str, destroy_error: &str) -> String {
-    format!(
-        "隐藏截图窗口失败：{}；销毁截图窗口也失败：{}",
-        hide_error, destroy_error
-    )
-}
-
 pub fn restore_capture_failed(error: &str, recovery_error: &str) -> String {
     format!("{}；恢复快速记录窗口失败：{}", error, recovery_error)
 }

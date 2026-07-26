@@ -11,11 +11,11 @@ const windowKind = new URLSearchParams(window.location.search).get("window");
 
 function DesktopOnlyNotice() {
   return (
-    <main className="desktop-only-notice">
-      <div className="desktop-only-card">
-        <p className="eyebrow">{APP_COPY.app.name}</p>
-        <h1>{APP_COPY.desktopOnly.title}</h1>
-        <p>{APP_COPY.desktopOnly.body}</p>
+    <main className="grid min-h-screen place-items-center bg-background p-6">
+      <div className="w-[min(420px,100%)] rounded-[18px] border border-border bg-card p-7 shadow-cadence-desktop">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{APP_COPY.app.name}</p>
+        <h1 className="mt-2 font-serif text-2xl font-semibold">{APP_COPY.desktopOnly.title}</h1>
+        <p className="mt-2.5 text-[13px] leading-[1.6] text-muted-foreground">{APP_COPY.desktopOnly.body}</p>
       </div>
     </main>
   );

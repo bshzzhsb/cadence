@@ -82,10 +82,35 @@ export const APP_COPY = {
         description: "应用授权、同步目标",
       },
     },
+    groups: {
+      basicDefaults: {
+        title: "默认偏好",
+        description: "设置新任务的默认时间。",
+      },
+      weekly: {
+        title: "周总结",
+        description: "按固定时间整理本周完成情况。",
+      },
+      aiConnection: {
+        title: "服务连接",
+        description: "配置兼容 OpenAI 的服务地址和访问凭证。",
+      },
+      aiModels: {
+        title: "模型",
+        description: "分别指定文本和视觉识别模型。",
+      },
+      larkAuth: {
+        title: "应用授权",
+        description: "填写飞书应用凭证以启用同步。",
+      },
+      larkTargets: {
+        title: "同步目标",
+        description: "指定多维表格和周总结文档的位置。",
+      },
+    },
     fields: {
       defaultDueHour: { label: "默认截止小时" },
-      theme: { label: "主题" },
-      weeklyEnabled: { label: "自动生成周总结" },
+      weeklyEnabled: { label: "自动生成周总结", description: "按设定时间整理本周完成情况" },
       weeklyDay: { label: "生成星期" },
       weeklyTime: { label: "生成时间" },
       aiBaseUrl: { label: "服务地址", placeholder: "https://.../v1" },
@@ -98,11 +123,6 @@ export const APP_COPY = {
       larkDocumentUrl: { label: "周总结文档链接" },
     },
     options: {
-      theme: {
-        system: "跟随系统",
-        light: "浅色",
-        dark: "深色",
-      },
       weekdays: ["周日", "周一", "周二", "周三", "周四", "周五", "周六"],
     },
     toast: {

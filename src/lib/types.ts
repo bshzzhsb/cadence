@@ -55,7 +55,7 @@ export interface AppSettings {
   weeklyDay: number;
   weeklyTime: string;
   weeklyEnabled: boolean;
-  theme: "system" | "light" | "dark";
+  theme: "light";
   aiBaseUrl: string;
   aiTextModel: string;
   aiVisionModel: string;
@@ -76,7 +76,7 @@ export const defaultSettings: AppSettings = {
   weeklyDay: 0,
   weeklyTime: "20:00",
   weeklyEnabled: true,
-  theme: "system",
+  theme: "light",
   aiBaseUrl: "",
   aiTextModel: "",
   aiVisionModel: "",

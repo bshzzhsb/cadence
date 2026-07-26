@@ -76,9 +76,9 @@ export function ScreenshotSelectionWindow() {
   };
 
   return (
-    <main className="screenshot-selection-window" aria-label={APP_COPY.screenshotSelection.windowLabel}>
+    <main className="screenshot-selection-window fixed inset-0 select-none overflow-hidden bg-transparent" aria-label={APP_COPY.screenshotSelection.windowLabel}>
       <div
-        className="screenshot-selection-stage"
+        className="screenshot-selection-stage fixed inset-0 touch-none cursor-crosshair overflow-hidden bg-[rgb(18_18_18_/_0.08)]"
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
           const value = point(event);
@@ -97,7 +97,7 @@ export function ScreenshotSelectionWindow() {
       >
         {selection && (
           <span
-            className="screen-selection-box"
+            className="screen-selection-box pointer-events-none absolute z-[2] border-2 border-selection-outline bg-selection-fill shadow-[0_0_0_9999px_rgb(18_18_18_/_0.5),0_0_24px_hsl(var(--tech-glow)/.4)] animate-cadence-selection-pulse"
             style={{
               left: selection.left,
               top: selection.top,
@@ -107,12 +107,12 @@ export function ScreenshotSelectionWindow() {
           />
         )}
 
-        <div className="screenshot-selection-hint" aria-hidden="true">
+        <div className="screenshot-selection-hint fixed left-1/2 top-[22px] z-[3] inline-flex -translate-x-1/2 items-center gap-[7px] rounded-full border border-[rgb(255_255_255_/_0.26)] bg-[rgb(18_18_18_/_0.84)] px-[13px] py-2 text-xs text-primary-foreground shadow-[0_10px_30px_rgb(18_18_18_/_0.28),0_0_18px_hsl(var(--tech-glow)/.12)] backdrop-blur-[10px] animate-cadence-fade-down" aria-hidden="true">
           <Crosshair size={16} /> {APP_COPY.screenshotSelection.hint}
         </div>
-        <div className="screenshot-selection-toolbar" onPointerDown={(event) => event.stopPropagation()}>
-          <span>{hasSelection ? APP_COPY.screenshotSelection.selectedSize(selection!.width, selection!.height) : APP_COPY.screenshotSelection.cancelWithEsc}</span>
-          {error && <strong>{error}</strong>}
+        <div className="screenshot-selection-toolbar fixed bottom-7 left-1/2 z-[3] flex -translate-x-1/2 items-center gap-[9px] rounded-[14px] border border-border bg-card/[.96] px-2 py-2 text-xs text-muted-foreground shadow-cadence-toolbar backdrop-blur-[12px] animate-cadence-fade-up" onPointerDown={(event) => event.stopPropagation()}>
+          <span className="whitespace-nowrap pl-[5px]">{hasSelection ? APP_COPY.screenshotSelection.selectedSize(selection!.width, selection!.height) : APP_COPY.screenshotSelection.cancelWithEsc}</span>
+          {error && <strong className="max-w-[280px] text-[11px] font-semibold text-destructive">{error}</strong>}
           <Button variant="ghost" size="sm" onClick={() => void cancel()}>
             <X size={15} /> {APP_COPY.screenshotSelection.actions.cancel}
           </Button>

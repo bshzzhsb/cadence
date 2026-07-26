@@ -15,9 +15,12 @@ interface TaskItemProps {
 export function TaskItem({ task, onComplete, onReopen, onDelete }: TaskItemProps) {
   const overdue = task.status === "open" && isOverdue(task.dueAt);
   return (
-    <article className="task-row group" aria-label={task.title}>
+    <article className="group relative flex min-h-[69px] items-start gap-3 border-b border-border/70 px-4 py-[15px] transition-[background,transform,box-shadow] duration-[var(--motion-standard)] ease-cadence last:border-b-0 hover:translate-x-0.5 hover:bg-accent/45 hover:shadow-cadence-task-hover motion-reduce:hover:transform-none after:pointer-events-none after:absolute after:inset-0 after:bg-cadence-row-sheen after:bg-[length:220%_100%] after:content-[''] after:opacity-0 after:transition-opacity after:duration-[var(--motion-standard)] after:ease-cadence hover:after:animate-cadence-row-sheen hover:after:opacity-100" aria-label={task.title}>
       <button
-        className={cn("task-check", task.status === "completed" && "task-check-complete")}
+        className={cn(
+          "inline-grid h-5 w-5 flex-none place-items-center rounded-[7px] border-[1.5px] border-input bg-transparent text-primary-foreground transition-[border-color,background-color,box-shadow,transform] duration-[var(--motion-standard)] ease-cadence hover:scale-105 hover:border-primary hover:shadow-cadence-check motion-reduce:hover:transform-none",
+          task.status === "completed" && "border-primary bg-primary",
+        )}
         onClick={() => (task.status === "completed" ? onReopen(task.id) : onComplete(task.id))}
         aria-label={task.status === "completed" ? APP_COPY.taskItem.reopenTaskWithTitle(task.title) : APP_COPY.taskItem.completeTask(task.title)}
       >
@@ -40,7 +43,7 @@ export function TaskItem({ task, onComplete, onReopen, onDelete }: TaskItemProps
               {formatDue(task.dueAt)}
             </span>
           )}
-          {task.priority === "high" && <Badge className="border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900 dark:bg-orange-950 dark:text-orange-300">{APP_COPY.taskItem.highPriority}</Badge>}
+          {task.priority === "high" && <Badge className="border-primary/35 bg-accent text-accent-foreground">{APP_COPY.taskItem.highPriority}</Badge>}
           {task.tags.map((tag) => (
             <Badge key={tag}>#{tag}</Badge>
           ))}
